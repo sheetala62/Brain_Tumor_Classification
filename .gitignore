@@ -1,0 +1,28 @@
+# Virtual environments
+venv/
+venv310/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Data / models
+data/
+datasets/
+*.pth
+*.pt
+*.h5
+*.ckpt
+
+# OS
+.DS_Store
+Thumbs.db
