@@ -1,48 +1,89 @@
 import streamlit as st
-from PIL import Image
 import torch
-import torchvision.transforms as transforms
-from scripts.model import MobileNetClassifier
+import torch.nn as nn
+from torchvision import transforms, models
+from PIL import Image
 
-# Device configuration
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Import your ArConvNet model from scripts/model.py
+from scripts.model import ArConvNet
 
-# Load trained model (MobileNet)
-model = MobileNetClassifier(num_classes=4).to(device)
-model.load_state_dict(torch.load("mobilenet_final.pth", map_location=device))
+# ---------------------------------------------------------
+# DEVICE SETUP
+# ---------------------------------------------------------
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model.eval()
+# ---------------------------------------------------------
+# LOAD ARCOVNET MODEL
+# ---------------------------------------------------------
+ar_model = ArConvNet(num_classes=4).to(DEVICE)
+ar_model.load_state_dict(torch.load("./models/arconvnet_final.pth", map_location=DEVICE))
+ar_model.eval()
 
-# Correct class order (MUST match training order)
-classes = ["glioma", "meningioma", "no_tumor", "pituitary"]
+# ---------------------------------------------------------
+# LOAD MOBILENETV2 MODEL (trained model)
+# ---------------------------------------------------------
+mobilenet = models.mobilenet_v2(weights="IMAGENET1K_V1")
+mobilenet.classifier[1] = nn.Linear(1280, 4)
+mobilenet = mobilenet.to(DEVICE)
 
-# Image transform - must match training pipeline
+# 🔥 Load your trained MobileNet model here
+mobilenet.load_state_dict(torch.load("./models/mobilenet_final.pth", map_location=DEVICE))
+
+mobilenet.eval()
+
+
+# ---------------------------------------------------------
+# TRANSFORMS
+# ---------------------------------------------------------
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
 ])
 
-# Streamlit UI
-st.title("🧠 Brain Tumor Classification App")
-st.write("Upload an MRI brain image to classify the tumor type using the trained MobileNet model.")
+LABELS = ['glioma', 'meningioma', 'no_tumor', 'pituitary']
 
-uploaded_file = st.file_uploader("Choose an MRI Image", type=["jpg", "jpeg", "png"])
 
-if uploaded_file is not None:
-    # Show uploaded image
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Uploaded MRI Image", width=350)
-
-    # Preprocess
-    img_tensor = transform(image).unsqueeze(0).to(device)
-
-    # Predict
+# ---------------------------------------------------------
+# PREDICT FUNCTION
+# ---------------------------------------------------------
+def predict(model, image):
+    image = transform(image).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
-        outputs = model(img_tensor)
-        _, predicted = torch.max(outputs, 1)
-        label = classes[predicted.item()]
+        output = model(image)
+        _, pred = torch.max(output, 1)
+    return LABELS[pred.item()]
 
-    # Show prediction
-    st.success(f"### 🔍 Prediction: **{label.upper()}**")
+
+# ---------------------------------------------------------
+# STREAMLIT UI
+# ---------------------------------------------------------
+st.title("🧠 Brain Tumor Classification")
+st.subheader("ArConvNet vs MobileNetV2 (MRI Image Upload)")
+
+uploaded_file = st.file_uploader("Upload MRI Image", type=["jpg", "jpeg", "png"])
+
+if uploaded_file:
+    img = Image.open(uploaded_file).convert("RGB")
+    st.image(img, caption="Uploaded Image", use_column_width=True)
+
+    # Predictions
+    st.write("### 🔍 Predictions:")
+
+    ar_pred = predict(ar_model, img)
+    mb_pred = predict(mobilenet, img)
+
+    st.write(f"**ArConvNet Prediction:** {ar_pred}")
+    st.write(f"**MobileNetV2 Prediction:** {mb_pred}")
+
+    # Highlight if both agree
+    if ar_pred == mb_pred:
+        st.success(f"Both models agree: **{ar_pred}**")
+    else:
+        st.warning("Models disagree — consider reviewing the image.")
+
+st.write("---")
+st.write("Created by Pooja Hegde • Brain Tumor Classification App")
